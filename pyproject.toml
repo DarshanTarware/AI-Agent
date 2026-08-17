@@ -7,7 +7,19 @@ authors = [
     { name = "Darshan Tarware", email = "tarwaredarshan2@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "duckduckgo-search>=8.1.1",
+    "fpdf2>=2.8.8",
+    "google-api-python-client>=2.198.0",
+    "google-auth-httplib2>=0.4.1",
+    "google-auth-oauthlib>=1.4.0",
+    "google-genai>=2.18.1",
+    "python-dotenv>=1.2.3",
+    "python-telegram-bot>=22.8",
+    "streamlit>=1.61.1",
+    "youtube-transcript-api>=1.2.4",
+    "yt-dlp>=2026.7.4",
+]
 
 [project.scripts]
 ai-agent = "ai_agent:main"

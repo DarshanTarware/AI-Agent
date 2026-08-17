@@ -1,0 +1,3 @@
+"""
+Interfaces package for AutoMate.
+"""
