@@ -1,25 +1,29 @@
 """
 Streamlit Web Dashboard for AutoMate Executive Agent.
 
-Provides an interactive web interface with live chat, tool activity feeds,
-and persistent task/report logs.
+Provides an interactive interface with persistent conversational memory,
+live media playback and downloads, and scheduled Google Calendar event logs.
 """
-
-from __future__ import annotations
 
 import os
 import sys
 
 # Ensure project root is in sys.path when running via `streamlit run`
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import streamlit as st
 from src.agent.brain import process_user_intent
-from src.data.database import get_recent_tasks, get_chat_history, init_db
+from src.data.database import (
+    get_chat_history,
+    get_events_logged,
+    get_media_files,
+    init_db,
+    insert_message,
+)
 
-# Configure page settings
+# Initialize page configuration
 st.set_page_config(
     page_title="AutoMate | Personal Executive Agent",
     page_icon="⚡",
@@ -30,119 +34,171 @@ st.set_page_config(
 # Initialize database schema
 init_db()
 
-# Custom CSS for styling
+USER_ID = "web_user"
+
+# Custom Styling
 st.markdown(
     """
     <style>
-    .main-header {
+    .main-title {
         font-size: 2.2rem;
         font-weight: 700;
+        color: #0f172a;
         margin-bottom: 0.2rem;
-        color: #1e293b;
     }
-    .sub-header {
+    .sub-title {
         font-size: 1rem;
         color: #64748b;
         margin-bottom: 1.5rem;
     }
-    .task-card {
+    .media-card {
         background-color: #f8fafc;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
         padding: 12px;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
     }
-    .task-title {
+    .media-name {
         font-weight: 600;
-        font-size: 0.95rem;
-        color: #0f172a;
+        font-size: 0.9rem;
+        color: #1e293b;
+        margin-bottom: 6px;
     }
-    .task-time {
+    .event-card {
+        background-color: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 8px;
+    }
+    .event-title {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: #166534;
+    }
+    .event-time {
         font-size: 0.75rem;
-        color: #94a3b8;
+        color: #15803d;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Sidebar
+# ----------------- SIDEBAR -----------------
 with st.sidebar:
-    st.title("⚡ AutoMate Dashboard")
+    st.title("⚡ AutoMate Hub")
     st.markdown("---")
-    
-    st.subheader("🛠️ Active Capabilities")
-    st.markdown(
-        """
-        - 🌐 **Live Web Search** (*DuckDuckGo*)
-        - 🎙️ **YouTube Audio Downloader** (*yt-dlp*)
-        - 📝 **YouTube Transcript Extraction** (*youtube-transcript-api*)
-        - 📅 **Calendar & Appointment Scheduler**
-        """
-    )
-    st.markdown("---")
-    
-    st.subheader("📋 Recent Tasks & Reports")
-    recent_tasks = get_recent_tasks(limit=6)
-    
-    if recent_tasks:
-        for task in recent_tasks:
+
+    st.subheader("🎧 Downloaded Media")
+    media_list = get_media_files(limit=10)
+
+    if media_list:
+        for item in media_list:
+            f_path = item.get("file_path", "")
+            f_name = os.path.basename(f_path) if f_path else "Audio Asset"
+            
             with st.container():
-                st.markdown(
-                    f"""
-                    <div class="task-card">
-                        <div class="task-title">📌 {task.get('title', 'Task')}</div>
-                        <div class="task-time">🕒 {task.get('created_at', '')} • <span style="color:#10b981;">{task.get('status', 'done')}</span></div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                st.markdown(f'<div class="media-name">🎵 {f_name}</div>', unsafe_allow_html=True)
+                if f_path and os.path.exists(f_path):
+                    st.audio(f_path)
+                    try:
+                        with open(f_path, "rb") as audio_file:
+                            st.download_button(
+                                label=f"⬇️ Download {f_name}",
+                                data=audio_file,
+                                file_name=f_name,
+                                mime="audio/mpeg",
+                                key=f"dl_{item['id']}",
+                                use_container_width=True,
+                            )
+                    except Exception as exc:
+                        st.caption(f"Audio ready on disk: {f_path}")
+                else:
+                    st.caption(f"Asset recorded: `{f_path}`")
+                st.markdown("<hr style='margin: 8px 0;'>", unsafe_allow_html=True)
     else:
-        st.info("No recorded tasks yet. Execute commands to populate this feed.")
+        st.info("No media files downloaded yet. Ask AutoMate to download a YouTube video!")
 
     st.markdown("---")
-    if st.button("🔄 Refresh Activity", use_container_width=True):
+    st.subheader("📅 Scheduled Events")
+    events = get_events_logged(limit=5)
+    if events:
+        for ev in events:
+            st.markdown(
+                f"""
+                <div class="event-card">
+                    <div class="event-title">📌 {ev.get('summary', 'Meeting')}</div>
+                    <div class="event-time">🕒 {ev.get('start_time', '')}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.caption("No events logged yet.")
+
+    st.markdown("---")
+    if st.button("🔄 Refresh Data", use_container_width=True):
         st.rerun()
 
-# Main Header
-st.markdown('<div class="main-header">AutoMate Executive Assistant</div>', unsafe_allow_html=True)
+# ----------------- MAIN VIEW -----------------
+st.markdown('<div class="main-title">AutoMate Executive Assistant</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-header">Multimodal autonomous agent powered by Google GenAI tool calling.</div>',
+    '<div class="sub-title">Multimodal executive intelligence powered by Google GenAI, live Web Search, YouTube tools, and Google Calendar.</div>',
     unsafe_allow_html=True,
 )
 
-# Initialize chat session state
-if "messages" not in st.session_state:
-    # Load previous history if available or start fresh
-    history = get_chat_history(platform="web", limit=20)
-    if history:
-        st.session_state.messages = [
-            {"role": row["role"], "content": row["message"]} for row in history
-        ]
-    else:
-        st.session_state.messages = [
-            {
-                "role": "assistant",
-                "content": "👋 Greetings! I am **AutoMate**, your executive AI agent. How can I assist you today?",
-            }
-        ]
+# Load persistent conversation history from SQLite
+chat_rows = get_chat_history(user_id=USER_ID, limit=30)
 
-# Display chat messages
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# Display chat messages from persistent DB
+if chat_rows:
+    for row in chat_rows:
+        with st.chat_message(row["role"]):
+            st.markdown(row["message"])
+else:
+    with st.chat_message("assistant"):
+        st.markdown(
+            "👋 Greetings! I am **AutoMate**, your executive AI agent with full tool routing. "
+            "How can I assist you today?"
+        )
 
-# User Input
-if prompt := st.chat_input("Enter an executive request or command..."):
-    # Display user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+# Chat Input Handler
+if prompt := st.chat_input("Ask AutoMate anything or request an action..."):
+    # 1. Display user prompt immediately
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Process through AutoMate brain
+    # 2. Record user turn in SQLite
+    insert_message(user_id=USER_ID, role="user", message=prompt)
+
+    # 3. Execute via AutoMate Brain
     with st.chat_message("assistant"):
         with st.spinner("AutoMate is reasoning and orchestrating tools..."):
-            response = process_user_intent(prompt, platform="web")
-            st.markdown(response)
+            brain_resp = process_user_intent(user_input=prompt, user_id=USER_ID, platform="web")
+            resp_text = brain_resp.text if hasattr(brain_resp, "text") else str(brain_resp)
+            media_path = brain_resp.file_path if hasattr(brain_resp, "file_path") else None
 
-    st.session_state.messages.append({"role": "assistant", "content": response})
+            st.markdown(resp_text)
+
+            # If a media file was downloaded in this turn, display inline player & download button
+            if media_path and os.path.exists(media_path):
+                st.audio(media_path)
+                f_name = os.path.basename(media_path)
+                try:
+                    with open(media_path, "rb") as mf:
+                        st.download_button(
+                            label=f"⬇️ Download {f_name}",
+                            data=mf,
+                            file_name=f_name,
+                            mime="audio/mpeg",
+                            key=f"turn_dl_{f_name}",
+                        )
+                except Exception:
+                    pass
+
+    # 4. Record assistant turn in SQLite
+    insert_message(user_id=USER_ID, role="assistant", message=resp_text)
+
+    # Rerun to update sidebar media list and event feeds seamlessly
+    st.rerun()
